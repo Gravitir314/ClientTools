@@ -11,18 +11,15 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
 const (
-	menu string = "1. Check for updates.\n" +
+	menu = "1. Check for updates.\n" +
 		"2. Download client.\n" +
-		"3. Export images.\n" +
-		"4. Export binary data.\n" +
-		"5. Add proxy server.\n" +
-		"6. Change background.\n" +
-		"7. Export packets.\n" +
-		"8. Export assets config.\n" +
+		"3. Export resources.\n" +
+		"4. Add proxy server. (PlayerGlobal required)\n" +
 		"> "
 )
 
@@ -59,105 +56,25 @@ func checkUpdates() {
 	err = ioutil.WriteFile(workingPath+"lib/version.txt", vers, 0777)
 	checkErr(err)
 
-	fmt.Println("Game updated from ", string(localVers), "to", string(vers))
+	fmt.Println("Game updated from", string(localVers), "to", string(vers))
 	downloadClient(true, true)
 }
 
 func downloadClient(update, menu bool) {
 	if !update {
-		resp, err := http.Get("http://www.realmofthemadgod.com/version.txt")
-		checkErr(err)
-		defer resp.Body.Close()
+		download(workingPath + "lib/version.txt", "http://www.realmofthemadgod.com/version.txt")
 
-		version, err := ioutil.ReadAll(resp.Body)
+		version_, err := ioutil.ReadFile(workingPath + "lib/version.txt")
 		checkErr(err)
-
-		err = ioutil.WriteFile(workingPath+"lib/version.txt", version, 0777)
-		checkErr(err)
+		version = string(version_)
 	}
-	file, err := os.Create(workingPath + "client" + version + ".swf")
-	checkErr(err)
-	defer file.Close()
 
-	resp, err := http.Get("http://www.realmofthemadgod.com/AssembleeGameClient" + string(version) + ".swf")
-	checkErr(err)
+	download(workingPath + "client" + version + ".swf", "http://www.realmofthemadgod.com/AssembleeGameClient" + version + ".swf")
 
-	_, err = io.Copy(file, resp.Body)
-	checkErr(err)
-
-	fmt.Println("Client v" + string(version) + " saved.")
+	fmt.Println("Client [" + version + "] saved.")
 	if menu {
 		checkMenu()
 	}
-}
-
-func exportImages(menu bool) {
-	if _, err := os.Stat(workingPath + "client" + version + ".swf"); os.IsNotExist(err) {
-		downloadClient(false, false)
-	}
-
-	java, err := exec.LookPath("java")
-	checkErr(err)
-
-	err = exec.Command(java, "-jar", "ffdec.jar", "-export", "image", workingPath+"decompiled"+version+"/images", workingPath+"client"+version+".swf").Run()
-	checkErr(err)
-
-	files, err := ioutil.ReadDir(workingPath + "decompiled" + version + "/images")
-	checkErr(err)
-
-	r := regexp.MustCompile("([a-z.]+)(\\w+.jpg|\\w+.png)")
-
-	for _, f := range files {
-		if strings.Count(f.Name(), ".") > 1 {
-			data, err := ioutil.ReadFile(workingPath + "decompiled" + version + "/images/" + f.Name())
-			checkErr(err)
-
-			name := r.FindAllStringSubmatch(f.Name(), -1)
-			path := strings.Replace(name[0][1], ".", "/", -1)
-			os.MkdirAll(workingPath+"decompiled"+version+"/formatted/"+path, 0777)
-			ioutil.WriteFile(workingPath+"decompiled"+version+"/formatted/"+path+name[0][2], data, 0777)
-			fmt.Println(name[0][2], "saved.")
-		}
-	}
-
-	fmt.Println("Images saved.")
-	if menu {
-		checkMenu()
-	}
-}
-
-func exportBin() {
-	if _, err := os.Stat(workingPath + "client" + version + ".swf"); os.IsNotExist(err) {
-		downloadClient(false, false)
-	}
-
-	java, err := exec.LookPath("java")
-	checkErr(err)
-
-	err = exec.Command(java, "-jar", "ffdec.jar", "-export", "binaryData", workingPath+"decompiled"+version+"/binaryData", workingPath+"client"+version+".swf").Run()
-	checkErr(err)
-
-	files, err := ioutil.ReadDir(workingPath + "decompiled" + version + "/binaryData")
-	checkErr(err)
-
-	r := regexp.MustCompile("([a-z.]+)(\\w+.bin)")
-
-	for _, f := range files {
-		if strings.Count(f.Name(), ".") > 1 {
-			data, err := ioutil.ReadFile(workingPath + "decompiled" + version + "/binaryData/" + f.Name())
-			checkErr(err)
-
-			matches := r.FindAllStringSubmatch(f.Name(), -1)
-			path := strings.Replace(matches[0][1], ".", "/", -1)
-			name := strings.Replace(matches[0][2], ".bin", ".dat", -1)
-			os.MkdirAll(workingPath+"decompiled"+version+"/formatted/"+path, 0777)
-			ioutil.WriteFile(workingPath+"decompiled"+version+"/formatted/"+path+name, data, 0777)
-			fmt.Println(name, "saved.")
-		}
-	}
-
-	fmt.Println("Binary data saved.")
-	checkMenu()
 }
 
 func addProxy() {
@@ -188,110 +105,140 @@ func addProxy() {
 	checkMenu()
 }
 
-func changeBackground() {
-	if _, err := os.Stat("background.png"); os.IsNotExist(err) {
-		fmt.Println("background.png not found.")
-		checkMenu()
-	}
-
+func exportResources() {
+	fmt.Println("Exporting started")
 	if _, err := os.Stat(workingPath + "client" + version + ".swf"); os.IsNotExist(err) {
 		downloadClient(false, false)
 	}
 
-	exportImages(false)
-
 	java, err := exec.LookPath("java")
+	checkErr(err)
+
+	err = exec.Command(java, "-jar", "ffdec.jar", "-export", "image", workingPath+"decompiled"+version+"/images", workingPath+"client"+version+".swf").Run()
 	checkErr(err)
 
 	files, err := ioutil.ReadDir(workingPath + "decompiled" + version + "/images")
 	checkErr(err)
 
-	r := regexp.MustCompile("(\\d+)")
+	r := regexp.MustCompile("([a-z.]+)(\\w+.jpg|\\w+.png)")
 
 	for _, f := range files {
-		if strings.Contains(f.Name(), "TitleView_TitleScreenGraphic") {
-			matches := r.FindAllStringSubmatch(f.Name(), -1)
-			err = exec.Command(java, "-jar", "ffdec.jar", "-replace", workingPath+"client"+version+".swf", workingPath+"client"+version+".swf", matches[0][1], workingPath+"background.png").Run()
+		if strings.Count(f.Name(), ".") > 1 {
+			data, err := ioutil.ReadFile(workingPath + "decompiled" + version + "/images/" + f.Name())
 			checkErr(err)
+
+			name := r.FindAllStringSubmatch(f.Name(), -1)
+			path := strings.Replace(name[0][1], ".", "/", -1)
+			os.MkdirAll(workingPath+"decompiled"+version+"/formatted/"+path, 0777)
+			ioutil.WriteFile(workingPath+"decompiled"+version+"/formatted/"+path+name[0][2], data, 0777)
 		}
 	}
 
-	fmt.Println("Background changed.")
-	checkMenu()
-}
-
-func exportPackets() {
-	if _, err := os.Stat(workingPath + "client" + version + ".swf"); os.IsNotExist(err) {
-		downloadClient(false, false)
-	}
-
-	java, err := exec.LookPath("java")
+	err = exec.Command(java, "-jar", "ffdec.jar", "-export", "binaryData", workingPath+"decompiled"+version+"/binaryData", workingPath+"client"+version+".swf").Run()
 	checkErr(err)
 
-	err = exec.Command(java, "-jar", "ffdec.jar", "-selectclass", "kabam.rotmg.messaging.impl.GameServerConnection", "-export", "script", workingPath+"decompiled"+version, workingPath+"client"+version+".swf").Run()
+	files, err = ioutil.ReadDir(workingPath + "decompiled" + version + "/binaryData")
+	checkErr(err)
+
+	r = regexp.MustCompile("([a-z.]+)(\\w+.bin)")
+
+	for _, f := range files {
+		if strings.Count(f.Name(), ".") > 1 {
+			data, err := ioutil.ReadFile(workingPath + "decompiled" + version + "/binaryData/" + f.Name())
+			checkErr(err)
+
+			matches := r.FindAllStringSubmatch(f.Name(), -1)
+			path := strings.Replace(matches[0][1], ".", "/", -1)
+			name := strings.Replace(matches[0][2], ".bin", ".dat", -1)
+			os.MkdirAll(workingPath+"decompiled"+version+"/formatted/"+path, 0777)
+			ioutil.WriteFile(workingPath+"decompiled"+version+"/formatted/"+path+name, data, 0777)
+		}
+	}
+
+	err = exec.Command(java, "-jar", "ffdec.jar", "-selectclass", "kabam.rotmg.messaging.impl.GameServerConnection,kabam.rotmg.assets.EmbeddedData,kabam.rotmg.assets.EmbeddedAssets", "-export", "script", workingPath+"decompiled"+version, workingPath+"client"+version+".swf").Run()
 	checkErr(err)
 
 	gsc, err := ioutil.ReadFile(workingPath + "decompiled" + version + "/scripts/kabam/rotmg/messaging/impl/GameServerConnection.as")
 	checkErr(err)
 	content := string(gsc)
 
-	r, err := regexp.Compile("const ([\\s\\S]*?):int[\\s\\S]*?(\\d+);")
-	checkErr(err)
+	r = regexp.MustCompile("const ([\\s\\S]*?):int[\\s\\S]*?(\\d+);")
 	matches := r.FindAllStringSubmatch(content, -1)
 
-	as, err := os.Create(workingPath + "decompiled" + version + "/AS3.as")
+	as, err := os.Create(workingPath + "decompiled" + version + "/Packets.as")
 	checkErr(err)
 	defer as.Close()
-	xml, err := os.Create(workingPath + "decompiled" + version + "/K-Relay.xml")
+	xml, err := os.Create(workingPath + "decompiled" + version + "/Packets.xml")
 	checkErr(err)
 	defer xml.Close()
 
+	i := 0
 	xml.WriteString("<Packets>\n")
-	for i := 0; i < len(matches); i++ {
+	for i = 0; i < len(matches); i++ {
 		as.WriteString("public static const " + matches[i][1] + ":int = " + matches[i][2] + ";\n")
 		xml.WriteString("	<Packet>\n		<PacketName>" + strings.Replace(matches[i][1], "_", "", -1) + "</PacketName>\n		<PacketID>" + matches[i][2] + "</PacketID>\n	</Packet>\n")
 	}
-	xml.WriteString("</Packets>")
+	xml.WriteString("</Packets>\n")
+	xml.WriteString("<Count>" + strconv.Itoa(i) + "</Count>")
+	as.WriteString("// " + strconv.Itoa(i) + " Packets")
 
-	fmt.Println("Packets saved.")
+	data_, err := ioutil.ReadFile(workingPath + "decompiled" + version + "/scripts/kabam/rotmg/assets/EmbeddedData.as")
+	checkErr(err)
+	data := string(data_)
+
+	r = regexp.MustCompile("(\\w+)+ static const (\\w+):Class = ([_\\w]+);")
+
+	data = r.ReplaceAllString(data, "[Embed(source=\"${3}.dat\", mimeType=\"application/octet-stream\")]\n\t${1} static const ${2}:Class;")
+	ioutil.WriteFile(workingPath+"decompiled"+version+"/formatted/kabam/rotmg/assets/EmbeddedData.as", []byte(data), 0777)
+
+	data_, err = ioutil.ReadFile(workingPath + "decompiled" + version + "/scripts/kabam/rotmg/assets/EmbeddedAssets.as")
+	checkErr(err)
+	data = string(data_)
+
+	files, err = ioutil.ReadDir(workingPath + "decompiled" + version + "/formatted/kabam/rotmg/assets")
+	checkErr(err)
+
+	r = regexp.MustCompile("Class = ([_\\w]+);")
+	matches = r.FindAllStringSubmatch(data, -1)
+
+	for i := 0; i < len(matches); i++ {
+		name := ""
+		r2 := regexp.MustCompile(matches[i][1])
+		for _, f := range files{
+			if r2.MatchString(f.Name()) {
+				name = f.Name()
+			}
+		}
+		if name == "" {
+			name = strings.Replace(matches[i][1], "EmbeddedAssets_", "", -1)
+			name = strings.Replace(name, "Embed_", "", -1)
+			download(workingPath + "decompiled" + version + "/formatted/kabam/rotmg/assets/" + matches[i][1] + ".png", "https://static.drips.pw/rotmg/production/current/sheets/" + name + ".png")
+			name = matches[i][1] + ".png"
+		}
+		if strings.Contains(name, ".dat") {
+			r3 := regexp.MustCompile("(\\w+) static (\\w+) (\\w+):Class = " + matches[i][1] + ";")
+			data = r3.ReplaceAllString(data, "[Embed(source=\"" + name + "\", mimeType=\"application/octet-stream\")]\n\t${1} static ${2} ${3}:Class;")
+		} else {
+			r3 := regexp.MustCompile("(\\w+) static (\\w+) (\\w+):Class = " + matches[i][1] + ";")
+			data = r3.ReplaceAllString(data, "[Embed(source=\"" + name + "\")]\n\t${1} static ${2} ${3}:Class;")
+		}
+	}
+
+	ioutil.WriteFile(workingPath+"decompiled"+version+"/formatted/kabam/rotmg/assets/EmbeddedAssets.as", []byte(data), 0777)
+
 	checkMenu()
 }
 
-func exportAssetsConfig() {
-	if _, err := os.Stat(workingPath + "client" + version + ".swf"); os.IsNotExist(err) {
-		downloadClient(false, false)
-	}
+func download(path, link string) {
+	file, err := os.Create(path)
+	checkErr(err)
+	defer file.Close()
 
-	java, err := exec.LookPath("java")
+	resp, err := http.Get(link)
 	checkErr(err)
 
-	err = exec.Command(java, "-jar", "ffdec.jar", "-selectclass", "com.company.assembleegameclient.util.AssetLoader", "-export", "script", workingPath+"decompiled"+version, workingPath+"client"+version+".swf").Run()
+	_, err = io.Copy(file, resp.Body)
 	checkErr(err)
-
-	assetLoader, err := ioutil.ReadFile(workingPath + "decompiled" + version + "/scripts/com/company/assembleegameclient/util/AssetLoader.as")
-	checkErr(err)
-
-	ioutil.WriteFile(workingPath+"decompiled"+version+"/formatted/com/company/assembleegameclient/util/AssetLoader.as", assetLoader, 0777)
-
-	err = exec.Command(java, "-jar", "ffdec.jar", "-selectclass", "kabam.rotmg.assets.EmbeddedAssets", "-export", "script", workingPath+"decompiled"+version, workingPath+"client"+version+".swf").Run()
-	checkErr(err)
-
-	embeddedAssets, err := ioutil.ReadFile(workingPath + "decompiled" + version + "/scripts/kabam/rotmg/assets/EmbeddedAssets.as")
-	checkErr(err)
-
-	ioutil.WriteFile(workingPath+"decompiled"+version+"/formatted/kabam/rotmg/assets/EmbeddedAssets.as", embeddedAssets, 0777)
-
-	err = exec.Command(java, "-jar", "ffdec.jar", "-selectclass", "kabam.rotmg.assets.EmbeddedData", "-export", "script", workingPath+"decompiled"+version, workingPath+"client"+version+".swf").Run()
-	checkErr(err)
-
-	embeddedData, err := ioutil.ReadFile(workingPath + "decompiled" + version + "/scripts/kabam/rotmg/assets/EmbeddedData.as")
-	checkErr(err)
-
-	ioutil.WriteFile(workingPath+"decompiled"+version+"/formatted/kabam/rotmg/assets/EmbeddedData.as", embeddedData, 0777)
-
-	fmt.Println("Warning! Vanilla only!")
-	fmt.Println("Config saved.")
-	checkMenu()
 }
 
 func getWorkingModel(model int) {
@@ -303,22 +250,10 @@ func getWorkingModel(model int) {
 		downloadClient(false, true)
 		return
 	case 3:
-		exportImages(true)
+		exportResources()
 		return
 	case 4:
-		exportBin()
-		return
-	case 5:
 		addProxy()
-		return
-	case 6:
-		changeBackground()
-		return
-	case 7:
-		exportPackets()
-		return
-	case 8:
-		exportAssetsConfig()
 		return
 	default:
 		fmt.Print("Unknown model.")
